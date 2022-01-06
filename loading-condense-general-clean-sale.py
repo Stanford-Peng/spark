@@ -58,14 +58,14 @@ for blob in blobs_list:
                 print("appending:")
                 df.write.format("delta").mode("append").save(delta_location)
             else:
-#                 print("saving:")
+                print("saving:")
                 df.write.format("delta").mode("ErrorIfExists").save(delta_location)
             # create table via this delta location
             sql_command = "CREATE TABLE if not exists {} USING DELTA LOCATION '{}'".format('WWI.'+striped_name.replace(" ", "_"), delta_location)
             print(sql_command)
             spark.sql(sql_command)
-        except Error as e:
-            print(e)
+        except Exception as e:
+            print("Exception:"+str(e))
 
 # COMMAND ----------
 
@@ -103,49 +103,134 @@ df_original = spark.sql("SELECT * FROM sales_order")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC select count(*) from wwi.warehouse_stockitemtransaction;
+
+import pyspark.sql.functions as f
+df_original = spark.sql("SELECT * FROM wwi.sales_order")
+df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5).show()
+
+# COMMAND ----------
+
+from pyspark.sql.types import *
+
+# Auxiliar functions
+def equivalent_type(f):
+    if f == 'datetime64[ns]': return TimestampType()
+    elif f == 'int64': return LongType()
+    elif f == 'int32': return IntegerType()
+    elif f == 'float64': return FloatType()
+    else: return StringType()
+
+def define_structure(string, format_type):
+    try: typo = equivalent_type(format_type)
+    except: typo = StringType()
+    return StructField(string, typo)
+
+# Given pandas dataframe, it will return a spark's dataframe.
+def pandas_to_spark(pandas_df):
+    columns = list(pandas_df.columns)
+    types = list(pandas_df.dtypes)
+    struct_list = []
+    for column, typo in zip(columns, types): 
+      struct_list.append(define_structure(column, typo))
+    p_schema = StructType(struct_list)
+    return sqlContext.createDataFrame(pandas_df, p_schema)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Shift the row where CustomerPurchaseOrderNumber is date -- error
 
 # COMMAND ----------
 
 #ERROR 1
 import pyspark.sql.functions as f
-df_original = spark.sql("SELECT CustomerPurchaseOrderNumber FROM wwi.sales_order")
-df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5).show()
+import pandas
+df_original = spark.sql("SELECT * FROM wwi.sales_order")
+# df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5).shift(periods=-1, axis="columns")
+df_error = df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5)
+# prevent lazy loading
+# df_error.count() not working
+pddf = df_error.toPandas()
+# print(list(pddf.columns))
+pddf1 = pddf.loc[:,"OrderID":"BackorderOrderID":1]
+pddf2 = pddf.loc[:,"OrderDate"::1].shift(periods=-1, axis="columns")
+print(pddf1)
+print(pddf2)
+spark.sql("DELETE FROM wwi.sales_order where length(CustomerPurchaseOrderNumber) > 5")
+# df_deleted = df_original.where(f.length(f.col("CustomerPurchaseOrderNumber")) <= 5)
+# print(df_error.schema)
+# Enable Arrow-based columnar data transfers
+spark.conf.set("spark.sql.execution.arrow.enabled", "true")
+df_concat = pandas.concat([pddf1, pddf2], axis=1)
+# df_concat.columns
+spdf_concat = pandas_to_spark(df_concat)
+# df_result = df_deleted.union(spdf_concat)
+spdf_concat.write.mode("append").saveAsTable("wwi.sales_order")
 
-# COMMAND ----------
-
-# error in salesCustomer
+# df_error.toPandas().shift(periods=-1, axis="columns")
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select count(*) as count, Location from wwi.application_cities group by Location having count > 1;
+# MAGIC select * from wwi.sales_order where OrderId = 73596
+
+# COMMAND ----------
+
+# %sql
+select * from wwi.sales_order limit 10;
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from wwi.application_cities where Location = 'POINT (-66.1287777 18.2185674)' 
-
-# COMMAND ----------
-
-df = spark.read.option("delimiter", ",").option("header", "true").option("escape","\"").csv("abfss://raw@datalaketeam3.dfs.core.windows.net/" + "application_people.csv")
-df.show()
+# MAGIC select * from wwi.sales_order where length(CustomerPurchaseOrderNumber) > 6;
+# MAGIC -- best way is to delete since the last column is not read anyway
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from wwi.application_people;
+# MAGIC -- error in salesCustomer
+# MAGIC select * from WWI.sales_customers limit 10;
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from wwi.application_systemparameters limit 10;
+# MAGIC select * from WWI.sales_customers where DeliveryLocation not like 'POINT%';
 
 # COMMAND ----------
 
-df = spark.read.option("delimiter", ",").option("header", "true").option("escape","\"").option("multiline",True).csv("abfss://raw@datalaketeam3.dfs.core.windows.net/" + "application_systemparameters.csv")
-df.show()
+df_original = spark.sql("SELECT * FROM wwi.sales_customers")
+# df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5).shift(periods=-1, axis="columns")
+df_error = spark.sql("select * from WWI.sales_customers where DeliveryLocation not like 'POINT%';")
+# prevent lazy loading
+# df_error.count() not working
+pddf = df_error.toPandas()
+# print(list(pddf.columns))
+pddf1 = pddf.loc[:,:"DeliveryAddressLine2":1]
+pddf2 = pddf.loc[:,"DeliveryPostalCode"::1].shift(periods=-1, axis="columns")
+print(pddf1)
+print(pddf2)
+spark.sql("DELETE FROM wwi.sales_customers where DeliveryLocation not like 'POINT%'")
+# df_deleted = df_original.where(f.length(f.col("CustomerPurchaseOrderNumber")) <= 5)
+# print(df_error.schema)
+# Enable Arrow-based columnar data transfers
+# spark.conf.set("spark.sql.execution.arrow.enabled", "true")
+df_concat = pandas.concat([pddf1, pddf2], axis=1)
+# df_concat.columns
+spdf_concat = pandas_to_spark(df_concat)
+spdf_concat.show()
+# df_result = df_deleted.union(spdf_concat)
+spdf_concat.write.mode("append").saveAsTable("wwi.sales_customers")
+# load table one by one is actaully better
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from WWI.sales_customers limit 3;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from WWI.sales_customers where CustomerID=1000
 
 # COMMAND ----------
 
