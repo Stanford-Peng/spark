@@ -74,6 +74,20 @@ for blob in blobs_list:
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC SELECT count(*) FROM (
+# MAGIC SELECT CustomerID, SalespersonPersonID,PickedByPersonID,ContactPersonID,BackorderOrderID, OrderDate,ExpectedDeliveryDate,CustomerPurchaseOrderNumber,IsUndersupplyBackordered,Comments,DeliveryInstructions,InternalComments,PickingCompletedWhen,LastEditedBy,LastEditedWhen, count(*)
+# MAGIC FROM WWI.sales_order
+# MAGIC WHERE OrderDate > '2016-04-30T00:00:00.0000000'
+# MAGIC GROUP BY CustomerID, SalespersonPersonID,PickedByPersonID,ContactPersonID,BackorderOrderID, OrderDate,ExpectedDeliveryDate,CustomerPurchaseOrderNumber,IsUndersupplyBackordered,Comments,DeliveryInstructions,InternalComments,PickingCompletedWhen,LastEditedBy,LastEditedWhen
+# MAGIC having count(*) > 1)
+
+# COMMAND ----------
+
+df_cleaned.count()
+
+# COMMAND ----------
+
 #remove dulicate rows except OrderID
 df_original = spark.sql("SELECT * FROM WWI.sales_order")
 import pyspark.sql.functions as f
@@ -148,6 +162,7 @@ import pandas
 df_original = spark.sql("SELECT * FROM wwi.sales_order")
 # df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5).shift(periods=-1, axis="columns")
 df_error = df_original.filter(f.length(f.col("CustomerPurchaseOrderNumber")) >5)
+
 # prevent lazy loading
 # df_error.count() not working
 pddf = df_error.toPandas()
@@ -162,7 +177,7 @@ spark.sql("DELETE FROM wwi.sales_order where length(CustomerPurchaseOrderNumber)
 # Enable Arrow-based columnar data transfers
 spark.conf.set("spark.sql.execution.arrow.enabled", "true")
 df_concat = pandas.concat([pddf1, pddf2], axis=1)
-# df_concat.columns
+# df_concat.columns pyspark.createDataframe
 spdf_concat = pandas_to_spark(df_concat)
 # df_result = df_deleted.union(spdf_concat)
 spdf_concat.write.mode("append").saveAsTable("wwi.sales_order")
