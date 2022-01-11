@@ -1,7 +1,8 @@
 # Databricks notebook source
+access_key = dbutils.secrets.get("azure-key-vault", "storage-account-access-key")
 spark.conf.set(
     "fs.azure.account.key.datalaketeam3.dfs.core.windows.net",
-   "4vT82BPbBT8hnSf4asSb9yHSsgH/ZFqURQBxzV9fNxa1IAiZdtjs04w7KZqe3LOV/byR/C3+sBAmBvt8AUs2SA==")
+   access_key)
 
 # COMMAND ----------
 
