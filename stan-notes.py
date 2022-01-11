@@ -12,6 +12,11 @@ spark.conf.set(
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC describe table wwi.sales_order;
+
+# COMMAND ----------
+
 #import uuid
 #from azure.storage.blob import ContainerClient
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, __version__
@@ -356,6 +361,11 @@ df.write.mode("overwrite").saveAsTable("sales_order")
 
 # MAGIC %sql
 # MAGIC describe detail wwi.sales_order
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from wwi.warehouse_stockitemtransaction;
 
 # COMMAND ----------
 

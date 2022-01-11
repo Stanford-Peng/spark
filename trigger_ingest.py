@@ -186,7 +186,7 @@ curate_container_client = blob_service_client.get_container_client("curate")
 if source_file.endswith(".xml"):
     print("start processing blob:" + source_file)
     try:
-      df = spark.read.format("com.databricks.spark.xml").options(rowTag="Row", rootTag="Table").option("multiline",True).load("/mnt/landing/" + source_file) 
+      df = spark.read.format("com.databricks.spark.xml").options(rowTag="Row", rootTag="Table",inferSchema=False).option("multiline",True).load("/mnt/landing/" + source_file) 
       read_files(df, source_file,curate_container_client,extension='.xml')
     except Exception as e:
         raise Exception("Pipeline: Failed to process xml file {source_file}".format)
