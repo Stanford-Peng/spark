@@ -30,7 +30,7 @@ print(curate_container_client.__class__)
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC drop database WWI CASCADE;
+# MAGIC drop database if exists WWI CASCADE;
 # MAGIC create database WWI;
 
 # COMMAND ----------

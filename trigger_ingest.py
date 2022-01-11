@@ -9,9 +9,11 @@ print(source_file)
 
 # COMMAND ----------
 
+
+access_key = dbutils.secrets.get("azure-key-vault", "storage-account-access-key")
 spark.conf.set(
     "fs.azure.account.key.datalaketeam3.dfs.core.windows.net",
-   "4vT82BPbBT8hnSf4asSb9yHSsgH/ZFqURQBxzV9fNxa1IAiZdtjs04w7KZqe3LOV/byR/C3+sBAmBvt8AUs2SA==")
+   access_key)
 
 
 # COMMAND ----------
@@ -48,12 +50,14 @@ except Exception as e:
 
 # COMMAND ----------
 
-# MAGIC %scala
+# MAGIC %md
 # MAGIC spark.sparkContext.hadoopConfiguration.set("spark.hadoop.fs.azure.account.key.datalaketeam3.blob.core.windows.net", "4vT82BPbBT8hnSf4asSb9yHSsgH/ZFqURQBxzV9fNxa1IAiZdtjs04w7KZqe3LOV/byR/C3+sBAmBvt8AUs2SA==")
 
 # COMMAND ----------
 
-
+# MAGIC %sql
+# MAGIC -- drop database  WWI CASCADE;
+# MAGIC create database if not exists WWI;
 
 # COMMAND ----------
 
@@ -185,21 +189,21 @@ if source_file.endswith(".xml"):
       df = spark.read.format("com.databricks.spark.xml").options(rowTag="Row", rootTag="Table").option("multiline",True).load("/mnt/landing/" + source_file) 
       read_files(df, source_file,curate_container_client,extension='.xml')
     except Exception as e:
-        print("Exception:"+str(e))
+        raise Exception("Pipeline: Failed to process xml file {source_file}".format)
 elif source_file.endswith(".json"):
     print("start processing blob:" + source_file)
     try:
         df = spark.read.format("json").option("multiline","true").load("/mnt/landing/" + source_file) 
         read_files(df, source_file,curate_container_client,extension='.json')
     except Exception as e:
-        print("Exception:"+str(e))
+        raise Exception("Pipeline: Failed to process json file {source_file}".format)
 elif source_file.endswith(".csv"):
     print("start processing blob:" + source_file)
     try: 
         df = spark.read.option("delimiter", ",").option("header", "true").option("escape","\"").option("multiline",True).csv("/mnt/landing/" + source_file)
         read_files(df, source_file,curate_container_client,extension='.csv')
     except Exception as e:
-        print("Exception:"+str(e))
+        raise Exception("Pipeline: Failed to process csv file {source_file}".format)
   
 
 
