@@ -353,4 +353,9 @@ df.write.mode("overwrite").saveAsTable("sales_order")
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC describe detail wwi.sales_order
+
+# COMMAND ----------
+
 
