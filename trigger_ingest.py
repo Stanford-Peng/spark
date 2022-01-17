@@ -22,7 +22,7 @@ try:
     dbutils.fs.mount(
     source = "wasbs://landing@datalaketeam3.blob.core.windows.net",
     mount_point = "/mnt/landing",
-    extra_configs = {"fs.azure.account.key.datalaketeam3.blob.core.windows.net":"4vT82BPbBT8hnSf4asSb9yHSsgH/ZFqURQBxzV9fNxa1IAiZdtjs04w7KZqe3LOV/byR/C3+sBAmBvt8AUs2SA=="})
+    extra_configs = {"fs.azure.account.key.datalaketeam3.blob.core.windows.net":access_key})
 except Exception as e:
   print("mounted already")
 
@@ -175,8 +175,7 @@ def read_files(df, source_file,curate_container_client,extension):
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient, __version__
 import re
 import pandas as pd
-
-connect_str = 'DefaultEndpointsProtocol=https;AccountName=datalaketeam3;AccountKey=4vT82BPbBT8hnSf4asSb9yHSsgH/ZFqURQBxzV9fNxa1IAiZdtjs04w7KZqe3LOV/byR/C3+sBAmBvt8AUs2SA==;EndpointSuffix=core.windows.net'
+connect_str = dbutils.secrets.get("azure-key-vault", "datalake-connect-str")
 blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 landing_container_client = blob_service_client.get_container_client("landing")
 curate_container_client = blob_service_client.get_container_client("curate")
@@ -189,21 +188,39 @@ if source_file.endswith(".xml"):
       df = spark.read.format("com.databricks.spark.xml").options(rowTag="Row", rootTag="Table",inferSchema=False).option("multiline",True).load("/mnt/landing/" + source_file) 
       read_files(df, source_file,curate_container_client,extension='.xml')
     except Exception as e:
-        raise Exception("Pipeline: Failed to process xml file {source_file}".format)
+        raise Exception("Pipeline: Failed to process xml file {source_file}".format(source_file))
 elif source_file.endswith(".json"):
     print("start processing blob:" + source_file)
     try:
         df = spark.read.format("json").option("multiline","true").load("/mnt/landing/" + source_file) 
         read_files(df, source_file,curate_container_client,extension='.json')
     except Exception as e:
-        raise Exception("Pipeline: Failed to process json file {source_file}".format)
+        raise Exception("Pipeline: Failed to process json file {source_file}".format(source_file))
 elif source_file.endswith(".csv"):
     print("start processing blob:" + source_file)
     try: 
         df = spark.read.option("delimiter", ",").option("header", "true").option("escape","\"").option("multiline",True).csv("/mnt/landing/" + source_file)
         read_files(df, source_file,curate_container_client,extension='.csv')
     except Exception as e:
-        raise Exception("Pipeline: Failed to process csv file {source_file}".format)
+        print("Pipeline: Failed to process json file {source_file} with delimiter , and try with ; again".format(source_file))
+        try: 
+            df = spark.read.option("delimiter", ";").option("header", "true").option("escape","\"").option("multiline",True).csv("/mnt/landing/" + source_file)
+            read_files(df, source_file,curate_container_client,extension='.csv')
+        except Exception as e:
+            raise Exception("Pipeline: Failed to process csv file {source_file}".format(source_file))
   
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC sudo ls /mnt/landing
+
+# COMMAND ----------
 
 

@@ -12,6 +12,49 @@ spark.conf.set(
 
 # COMMAND ----------
 
+try:
+    dbutils.fs.mount(
+    source = "wasbs://presentation@datalaketeam3.blob.core.windows.net",
+    mount_point = "/mnt/presentation",
+    extra_configs = {"fs.azure.account.key.datalaketeam3.blob.core.windows.net":access_key})
+except Exception as e:
+  print(e)
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC create table dim_city using delta location "/mnt/presentation/dim_city"
+
+# COMMAND ----------
+
+# MAGIC %python
+# MAGIC %python
+# MAGIC read_format = 'delta'
+# MAGIC write_format = 'delta'
+# MAGIC load_path = 'dbfs:/user/hive/warehouse/staging.db/datecityitem'
+# MAGIC save_path = 'abfss://sales@datalaketeam3.dfs.core.windows.net/'
+# MAGIC table_name = 'sales.datecityitem'
+# MAGIC 
+# MAGIC # Load the data from its source.
+# MAGIC transferdf = spark.read.format(read_format).load(load_path)
+# MAGIC 
+# MAGIC # Write the data to its target.
+# MAGIC transferdf.write.format(write_format).save(save_path)
+# MAGIC 
+# MAGIC # create database 
+# MAGIC 
+# MAGIC spark.sql("create database if not exists sales")
+# MAGIC 
+# MAGIC # Create the table.
+# MAGIC spark.sql("CREATE TABLE if not exists " + table_name + " USING DELTA LOCATION '" + save_path + "'")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe detail staging.datecityitem;
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC describe table wwi.sales_order;
 
@@ -366,6 +409,102 @@ df.write.mode("overwrite").saveAsTable("sales_order")
 
 # MAGIC %sql
 # MAGIC select count(*) from wwi.warehouse_stockitemtransaction;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC 
+# MAGIC select * from wwi.sales_customertransaction gro;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) as count from wwi.sales_customertransaction group by CustomerTransactionID having count > 1;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select sl.InvoiceID,sil.invoicelineid, sol.orderlineid,sol.quantity as solquantity, sil.quantity as silquantity from (wwi.sales_invoice sl join wwi.sales_invoiceline sil on sl.invoiceid = sil.invoiceid) join wwi.sales_orderline sol on sol.orderid = sl.orderid and sil.stockitemid = sol.stockitemid where sol.quantity != sil.quantity
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe details sales_invoice
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.2015_usa_weather_data_final;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select max(Date), min(Date) from wwi.2015_usa_weather_data_final;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.sales_order;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct city.stateprovinceid, city.cityname from wwi.sales_customers sc join wwi.sales_order so on sc.customerid = so.customerid join wwi.application_cities city on city.cityid = sc.DeliveryCityID join wwi.application_countries countries on countries.StateProvinceID = city.StateProvinceID
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.sanfrancisco_temp;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.sanf_all_weather limit 10;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from wwi.sanf_all_weather ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table default.*;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DROP TABLE default.dwdim_city;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DROP TABLE default.dwdim_customercategory;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table default.dwdim_stockitemstockgroup;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from dw.dim_city;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe detail dw.dim_city;
+
+# COMMAND ----------
+
+
+display(dw.dim_city.history())
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC sudo ls /mnt
 
 # COMMAND ----------
 
