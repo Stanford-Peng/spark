@@ -508,4 +508,373 @@ display(dw.dim_city.history())
 
 # COMMAND ----------
 
+# MAGIC %sql
+# MAGIC select count(*) from wwi.sales_invoiceline;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from dw.fact_transaction_sales;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table wwi.california_weather_part10;
+# MAGIC drop table wwi.california_weather_part11;
+# MAGIC drop table wwi.california_weather_part12;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # Add weather and bridge city and station
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from wwi.California_Weather;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.California_Weather limit 50;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(distinct station) from wwi.California_Weather where TAVG is not null ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC --get the station where tmp is not null
+# MAGIC select count(distinct station, name, latitude, longitude) from wwi.California_Weather where TAVG is not null ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct station from wwi.California_Weather where TAVG is not null ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct station, name, cast(latitude as float) as stationlatitude, cast(longitude as float) as stationlongitude  from wwi.California_Weather where TAVG is not null and latitude is not null and longitude is not null;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct station, cast(latitude as float) as stationlatitude, cast(longitude as float) as stationlongitude  from wwi.California_Weather where TAVG is not null and latitude is not null and longitude is not null;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from (select distinct station, name, cast(latitude as float) as stationlatitude, cast(longitude as float) as stationlongitude  from wwi.California_Weather where TAVG is not null) where station = "USR0000CSRS";
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- drop table wwi.city_station;
+# MAGIC drop table wwi.station;
+# MAGIC create table wwi.station as 
+# MAGIC (select distinct station, name, cast(latitude as float) as stationlatitude, cast(longitude as float) as stationlongitude  from wwi.California_Weather where TAVG is not null and latitude is not null and longitude is not null);
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe detail wwi.station
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC select Location from wwi.application_cities;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DECLARE @source geography = 'POINT(0 51.5)';
+# MAGIC DECLARE @target geography = 'POINT(-3 56)';
+# MAGIC 
+# MAGIC SELECT @source.STDistance(@target);
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT regexp_extract('100-200', '(\\d+)-(\\d+)', 1);
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",2),'(','') as float) as citylongitude, cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",3),')','') as float)as citylatitude, city.cityid, cityname, StateProvinceID from wwi.application_cities city where StateProvinceID like '5';
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe table wwi.application_cities;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from wwi.application_cities where StateProvinceID like '5' ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.application_stateprovinces
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from wwi.station;
+
+# COMMAND ----------
+
+city_sql = """select cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",2),'(','') as float) as citylongitude, cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",3),')','') as float)as citylatitude, city.cityid, cityname from wwi.application_cities city;"""
+city_df = spark.sql(city_sql)
+station_sql = """select * from wwi.station;"""
+station_df = spark.sql(station_sql)
+city_df.crossJoin(station_df).schema
+# .withColumn("distance",dist_udf(F.col('citylatitude'), F.col('citylongitude'), F.col('stationlatitude'), F.col('stationlongitude')))
+# city_df['station_nearest'] = 
+
+
+# COMMAND ----------
+
+import pyspark.sql.functions as F
+from pyspark.sql.types import FloatType
+
+def haversine(lat1, lon1, lat2, lon2):
+  lat1, lon1, lat2, lon2 = map(F.radians, [lat1, lon1, lat2, lon2])
+  return 2*6378*F.sqrt(pow(F.sin((lat2-lat1)/2),2) + F.cos(lat1)*F.cos(lat2)*pow(F.sin((lon2-lon1)/2),2))
+
+dist_udf=F.udf(haversine, FloatType())
+
+city_sql = """select cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",2),'(','') as float) as citylongitude, cast(replace(regexp_extract(city.Location,"POINT\((.+) (.+)\)",3),')','') as float)as citylatitude, city.cityid, cityname from wwi.application_cities city where StateProvinceID like '5';"""
+city_df = spark.sql(city_sql)
+station_sql = """select * from wwi.station;"""
+station_df = spark.sql(station_sql)
+
+city_station_crossed=city_df.crossJoin(station_df).withColumn("distance",haversine(F.col('citylatitude'),F.col('citylongitude'), F.col('stationlatitude'),F.col('stationlongitude')))
+# display(city_station_crossed)
+
+# COMMAND ----------
+
+display(city_station_crossed)
+
+# COMMAND ----------
+
+# https://stackoverflow.com/questions/38687212/spark-dataframe-drop-duplicates-and-keep-first
+from pyspark.sql import Window 
+import pyspark.sql.functions as F
+w = Window.partitionBy('cityid').orderBy('distance')
+station_near_city = city_station_crossed.withColumn('rank',F.rank().over(w)).where(F.col('rank') == 1)
+#https://mrpowers.medium.com/managing-spark-partitions-with-coalesce-and-repartition-4050c57ad5c4
+# from pyspark.sql import Window 
+# import pyspark.sql.functions as F
+
+# w = Window.partitionBy('datestr')
+# data_df = data_df.withColumn("max", F.max(F.col("col1"))\
+#     .over(w))\
+#     .where(F.col('max') == F.col('col1'))\
+#     .drop("max")
+# station_near_city=city_station_crossed.where("distance is not null").orderBy('distance').dropDuplicates(subset = ['cityid','cityname','citylongitude','citylatitude'])
+station_near_city.count()#1612
+# display(city_station_crossed.groupBy('cityid','cityname','citylongitude','citylatitude').min('distance').select('station'))
+
+# COMMAND ----------
+
+spark.sql('drop table station_near_city')
+station_near_city.write.mode("overwrite").saveAsTable("ml.station_near_city")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select max(distance) from ml.station_near_city;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from ml.station_near_city;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from station_near_city;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from wwi.California_Weather limit 10;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC create database ml;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC create table ml.california_cities as(
+# MAGIC select * from wwi.application_cities where StateProvinceID like '5') ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from ml.california_cities
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table ml.city_temp;
+# MAGIC create table ml.city_temp as(
+# MAGIC select sc.cityid,sc.cityname,date,TAVG from 
+# MAGIC ml.california_cities cc join ml.station_near_city sc on cc.cityid = sc.cityid 
+# MAGIC join wwi.California_Weather cw on cw.station = sc.station order by cw.date
+# MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from ml.city_temp;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC drop table ml.sales_by_date_city_item;
+# MAGIC create table ml.sales_by_date_city_item as 
+# MAGIC (
+# MAGIC select cast(so.OrderDate as date) orderdate, ac.CityName cityname, sin.stockitemid stockitemid, sum(sin.extendedprice) as sales, cast(ws.ischillerstock as boolean) ischilled
+# MAGIC from wwi.sales_order as so 
+# MAGIC join wwi.sales_invoice as si 
+# MAGIC on so.OrderID = si.OrderID 
+# MAGIC join wwi.sales_invoiceline as sin
+# MAGIC on si.InvoiceID = sin.InvoiceID
+# MAGIC join wwi.sales_customers as sc 
+# MAGIC on si.CustomerID = sc.customerID
+# MAGIC join wwi.application_cities as ac
+# MAGIC on sc.DeliveryCityID = ac.CityID
+# MAGIC join wwi.warehouse_stockitems ws
+# MAGIC on ws.stockitemid = sin.stockitemid
+# MAGIC Group by orderdate,sc.DeliveryCityID, ac.CityName,sin.stockitemid, ws.ischillerstock
+# MAGIC having sc.DeliveryCityID in (select CityID from wwi.application_cities where StateProvinceID like '5')
+# MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from ml.sales_by_date_city_item; 
+# MAGIC --11855
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC --test on other join
+# MAGIC select count(*) from ml.sales_by_date_city_item s join ml.station_near_city sc on s.cityname = sc.cityname 
+# MAGIC join wwi.California_Weather cw on cw.station = sc.station and s.orderdate=cw.date
+# MAGIC ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- join reduce rows because some temp is missing
+# MAGIC -- select count(s.orderdate,s.cityname,stockitemid, ischilled, TAVG, sales) from ml.sales_by_date_city_item s join ml.city_temp ct on s.orderdate=ct.date and s.cityname=ct.cityname ;
+# MAGIC select count(*) from ml.sales_by_date_city_item s left join ml.city_temp ct on s.orderdate=ct.date and s.cityname=ct.cityname ; 
+# MAGIC -- when it is inner join:11475
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC (
+# MAGIC select s.orderdate,s.cityname,stockitemid, ischilled, cast(TAVG as float), sales from ml.sales_by_date_city_item s left join ml.city_temp ct on s.orderdate=ct.date and s.cityname=ct.cityname);
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC drop table ml.dataset;
+# MAGIC create table ml.dataset as
+# MAGIC (
+# MAGIC select s.orderdate,s.cityname,stockitemid, ischilled, cast(TAVG as float), sales from ml.sales_by_date_city_item s left join ml.city_temp ct on s.orderdate=ct.date and s.cityname=ct.cityname);
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC --add time date
+# MAGIC alter table ml.dataset add columns (season_id char(1),weekday char(1));
+# MAGIC -- weekday(expr)
+# MAGIC UPDATE ml.dataset
+# MAGIC set weekday = weekday(orderdate);
+# MAGIC 
+# MAGIC UPDATE ml.dataset
+# MAGIC set season_id = '1'
+# MAGIC WHERE
+# MAGIC lower(date_format(orderdate, 'MMM')) IN (
+# MAGIC 'jun',
+# MAGIC 'jul',
+# MAGIC 'aug'
+# MAGIC );
+# MAGIC 
+# MAGIC UPDATE ml.dataset
+# MAGIC set season_id = '2'
+# MAGIC WHERE
+# MAGIC lower(date_format(orderdate, 'MMM')) IN (
+# MAGIC 'dec',
+# MAGIC 'jan',
+# MAGIC 'feb'
+# MAGIC );
+# MAGIC 
+# MAGIC UPDATE ml.dataset
+# MAGIC set season_id = '3'
+# MAGIC WHERE
+# MAGIC lower(date_format(orderdate, 'MMM')) IN (
+# MAGIC 'mar',
+# MAGIC 'apr',
+# MAGIC 'may'
+# MAGIC );
+# MAGIC 
+# MAGIC UPDATE ml.dataset
+# MAGIC set season_id = '4'
+# MAGIC WHERE
+# MAGIC lower(date_format(orderdate, 'MMM')) IN (
+# MAGIC 'sep',
+# MAGIC 'oct',
+# MAGIC 'nov'
+# MAGIC );
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct(weekday) from ml.dataset;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT weekday(DATE'2022-01-17');
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from ml.dataset ;
+# MAGIC --0 is monday, 6 is sunday
+
+# COMMAND ----------
+
+# MAGIC %sql 
+# MAGIC drop table ml.dataset_test1;
+# MAGIC create table ml.dataset_test1 as 
+# MAGIC (select 
+# MAGIC cityname, 
+# MAGIC stockitemid, 
+# MAGIC ischilled,
+# MAGIC TAVG,
+# MAGIC sales,
+# MAGIC season_id,
+# MAGIC weekday
+# MAGIC   from ml.dataset
+# MAGIC )
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from ml.dataset_test1
+
+# COMMAND ----------
+
 

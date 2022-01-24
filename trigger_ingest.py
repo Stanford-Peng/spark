@@ -155,7 +155,7 @@ except Exception as e:
 # COMMAND ----------
 
 def read_files(df, source_file,curate_container_client,extension):
-      striped_name = re.sub("s?_part\d"+extension,"",source_file).replace(extension, "")
+      striped_name = re.sub("s?_part\d+"+extension,"",source_file).replace(extension, "")
       delta_location='abfss://curate@datalaketeam3.dfs.core.windows.net/' + striped_name
       print("Processing stripped:"+striped_name)
       if striped_name in [blob['name'] for blob in curate_container_client.list_blobs()]:
